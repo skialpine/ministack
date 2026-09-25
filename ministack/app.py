@@ -3092,6 +3092,10 @@ def _process_alive(pid: int) -> bool:
     return True
 
 
+def _signal_self():
+    os.kill(os.getpid(), signal.SIGTERM)
+
+
 def _watch_parent_pid():
     """Once MINISTACK_PARENT_PID exits, however it exits, stop as ``ministack --stop``
     does, so an orphaned MiniStack still removes its containers."""
@@ -3115,7 +3119,7 @@ def _watch_parent_pid():
             time.sleep(_PARENT_POLL_INTERVAL)
         _LIFESPAN_STARTED.wait()
         logger.info("Parent process %d has exited; shutting down", pid)
-        os.kill(os.getpid(), signal.SIGTERM)
+        _signal_self()
 
     threading.Thread(target=_watch, name="ministack-parent-watch", daemon=True).start()
 
