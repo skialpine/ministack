@@ -795,6 +795,11 @@ def cur():
 
 
 @pytest.fixture(scope="session")
+def budgets():
+    return make_client("budgets")
+
+
+@pytest.fixture(scope="session")
 def inspector2():
     return make_client("inspector2")
 
