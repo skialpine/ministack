@@ -15,6 +15,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - **ElastiCache — serverless caches run in cluster mode** — AWS serves a serverless cache as a cluster-mode cache, so a multi-key command whose keys hash to different slots fails with `CROSSSLOT`; MiniStack's container ran without cluster mode and accepted it, so such code passed locally and failed on AWS. The container now runs as one cluster-mode shard holding every slot, and `CLUSTER SLOTS` reports the cache's endpoint, as AWS's single virtual shard does. Contributed by @skialpine.
+- **RDS — a MySQL master user started in the background keeps its admin grant** — an instance whose engine image was not cached yet, or one respawned on restore, started on a background path that skipped the master-user grant the inline path gives, so the master user held only its own database and `SET PERSIST` failed for lack of `SYSTEM_VARIABLES_ADMIN`. Both paths now grant it. Contributed by @skialpine.
 
 ## [1.5.21] — 2026-10-03
 
