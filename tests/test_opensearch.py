@@ -655,28 +655,26 @@ def test_opensearch_reset_clears_all_regions():
 
 
 def test_opensearch_dataplane_names_include_account_and_region():
-    """Two accounts (or two MiniStacks sharing one Docker daemon) may each own a
-    domain of the same name; their containers must not collide."""
+    """Two accounts, or two regions, may each own a domain of the same name;
+    their containers must not collide, and the data container's name stays one
+    DNS label (Dashboards reaches it by name) for the longest domain name."""
     from ministack.core.responses import (
         get_account_id, get_region, set_request_account_id, set_request_region,
     )
     from ministack.services import opensearch
 
     original_account, original_region = get_account_id(), get_region()
+    longest = "d" * 28
+    names = set()
     try:
-        set_request_account_id("111111111111")
-        set_request_region(REGION)
-        assert opensearch._container_name("same") == f"ministack-opensearch-111111111111-{REGION}-same"
-        assert opensearch._dashboards_container_name("same") == (
-            f"ministack-opensearch-dashboards-111111111111-{REGION}-same"
-        )
-
-        set_request_account_id("222222222222")
-        set_request_region("us-west-2")
-        assert opensearch._container_name("same") == "ministack-opensearch-222222222222-us-west-2-same"
-        assert opensearch._dashboards_container_name("same") == (
-            "ministack-opensearch-dashboards-222222222222-us-west-2-same"
-        )
+        for account, region in (("111111111111", REGION), ("222222222222", REGION),
+                                ("111111111111", "ap-southeast-3")):
+            set_request_account_id(account)
+            set_request_region(region)
+            names.add((opensearch._container_name("same"),
+                       opensearch._dashboards_container_name("same")))
+            assert len(opensearch._container_name(longest)) <= 63
+        assert len(names) == 3
     finally:
         set_request_account_id(original_account)
         set_request_region(original_region)
