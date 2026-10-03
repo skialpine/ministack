@@ -335,11 +335,11 @@ def _get_docker():
 
 
 def _container_name(domain_name: str) -> str:
-    return f"ministack-opensearch-{get_region()}-{domain_name}"
+    return f"ministack-opensearch-{get_account_id()}-{get_region()}-{domain_name}"
 
 
 def _dashboards_container_name(domain_name: str) -> str:
-    return f"ministack-opensearch-dashboards-{get_region()}-{domain_name}"
+    return f"ministack-opensearch-dashboards-{get_account_id()}-{get_region()}-{domain_name}"
 
 
 def _image_is_local(docker_client, image: str) -> bool:
