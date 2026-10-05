@@ -2656,13 +2656,16 @@ def _mysql_parameter_value(value):
     return value
 
 
-def _apply_parameter_group_changes(group_name, changes):
+def _apply_parameter_group_changes(group_name, changes, refuse_static=True):
     """Apply `(name, value, apply_method)` changes to the running MySQL instances
     in a DB parameter group, as RDS does: an `immediate` change to a dynamic
     parameter takes effect now (a `None` value resets it to the engine default);
-    a static parameter, or a `pending-reboot` change, leaves the instance
-    `pending-reboot` until the next start, which applies the whole group
-    (`_mysql_server_options`)."""
+    a `pending-reboot` change leaves the instance `pending-reboot` until the next
+    start, which applies the whole group (`_mysql_server_options`). An `immediate`
+    change to a static parameter, which the server reports as a read-only
+    variable, is refused as AWS refuses it, before anything is applied; with
+    `refuse_static=False` (a reset) it is left pending-reboot instead. Returns
+    the refusal, or None."""
     for instance in list(_instances.values()):
         groups = instance.get("DBParameterGroups") or []
         if not (
@@ -2689,6 +2692,13 @@ def _apply_parameter_group_changes(group_name, changes):
             else:
                 try:
                     with conn.cursor() as cur:
+                        for name, _value in immediate if refuse_static else ():
+                            try:
+                                cur.execute(f"SET GLOBAL {name} = @@GLOBAL.{name}")
+                            except Exception as e:
+                                if e.args and e.args[0] == 1238:  # ER_INCORRECT_GLOBAL_LOCAL_VAR: read-only
+                                    return _error("InvalidParameterCombination",
+                                                  "cannot use immediate apply method for static parameter", 400)
                         for name, value in immediate:
                             try:
                                 if value is None:
@@ -2704,6 +2714,7 @@ def _apply_parameter_group_changes(group_name, changes):
                     conn.close()
         if pending:
             groups[0]["ParameterApplyStatus"] = "pending-reboot"
+    return None
 
 
 def _is_postgres_engine(engine):
@@ -6620,10 +6631,13 @@ def _modify_param_group(p):
         pname = _p(p, f"{prefix}.{idx}.ParameterName")
         pvalue = _p(p, f"{prefix}.{idx}.ParameterValue")
         apply_method = _p(p, f"{prefix}.{idx}.ApplyMethod") or "immediate"
-        params[pname] = {"ParameterValue": pvalue, "ApplyMethod": apply_method}
         changes.append((pname, pvalue, apply_method))
         idx += 1
-    _apply_parameter_group_changes(name, changes)
+    refusal = _apply_parameter_group_changes(name, changes)
+    if refusal:
+        return refusal
+    for pname, pvalue, apply_method in changes:
+        params[pname] = {"ParameterValue": pvalue, "ApplyMethod": apply_method}
 
     return _xml(200, "ModifyDBParameterGroupResponse",
         f"<ModifyDBParameterGroupResult><DBParameterGroupName>{name}</DBParameterGroupName></ModifyDBParameterGroupResult>")
@@ -6647,7 +6661,7 @@ def _reset_param_group(p):
         )
 
     if reset_all or not has_explicit_parameters:
-        reset = list(params)
+        reset = [(pname, None, "immediate") for pname in params]
         params.clear()
     else:
         reset = []
@@ -6657,9 +6671,7 @@ def _reset_param_group(p):
             if params.pop(pname, None) is not None:
                 reset.append((pname, None, _p(p, f"{prefix}.{idx}.ApplyMethod") or "immediate"))
             idx += 1
-    if reset_all or not has_explicit_parameters:
-        reset = [(pname, None, "immediate") for pname in reset]
-    _apply_parameter_group_changes(name, reset)
+    _apply_parameter_group_changes(name, reset, refuse_static=False)
 
     return _xml(200, "ResetDBParameterGroupResponse",
         f"<ResetDBParameterGroupResult><DBParameterGroupName>{name}</DBParameterGroupName></ResetDBParameterGroupResult>")

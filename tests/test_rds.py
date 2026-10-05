@@ -8238,8 +8238,8 @@ def test_rds_mysql_binary_logging_follows_backup_retention(rds):
 def test_rds_mysql_applies_db_parameter_group(rds):
     """An instance starts with its DB parameter group (a name mysqld only takes
     under another option, `time_zone`, does not stop it). An immediate change to
-    a dynamic parameter applies at once and a reset returns it to the default; a
-    static one leaves the instance pending-reboot."""
+    a dynamic parameter applies at once and a reset returns it to the default; AWS
+    refuses an immediate change to a static one, which pending-reboot accepts."""
     suffix = uuid.uuid4().hex[:8]
     group, db_id = f"pg-{suffix}", f"pg-db-{suffix}"
     rds.create_db_parameter_group(DBParameterGroupName=group,
@@ -8276,7 +8276,11 @@ def test_rds_mysql_applies_db_parameter_group(rds):
         rds.reset_db_parameter_group(DBParameterGroupName=group, Parameters=[
             {"ParameterName": "max_connections", "ApplyMethod": "immediate"}])
         assert variable("max_connections") == 151
-        modify("performance_schema", "0")
+        with pytest.raises(ClientError) as exc:
+            modify("performance_schema", "0")
+        assert exc.value.response["Error"]["Code"] == "InvalidParameterCombination"
+        assert status() == "in-sync"
+        modify("performance_schema", "0", "pending-reboot")
         assert status() == "pending-reboot"
         conn.close()
     finally:
